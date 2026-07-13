@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>299</width>
-    <height>511</height>
+    <width>654</width>
+    <height>614</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -32,7 +32,7 @@
     <item>
      <widget class="QLabel" name="label_3">
       <property name="text">
-       <string>TextLabel</string>
+       <string>歌曲名/艺术家</string>
       </property>
      </widget>
     </item>
@@ -44,16 +44,16 @@
      </widget>
     </item>
     <item>
-     <widget class="QLabel" name="label">
-      <property name="text">
-       <string>总时长00:00</string>
+     <widget class="QListView" name="listView">
+      <property name="editTriggers">
+       <set>QAbstractItemView::NoEditTriggers</set>
       </property>
      </widget>
     </item>
     <item>
-     <widget class="QListView" name="listView">
-      <property name="editTriggers">
-       <set>QAbstractItemView::NoEditTriggers</set>
+     <widget class="QLabel" name="label">
+      <property name="text">
+       <string>总时长00:00</string>
       </property>
      </widget>
     </item>
@@ -100,6 +100,100 @@
      </widget>
     </item>
    </layout>
+  </widget>
+  <widget class="QPushButton" name="random_play_bttn">
+   <property name="geometry">
+    <rect>
+     <x>20</x>
+     <y>440</y>
+     <width>251</width>
+     <height>21</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>随机播放</string>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="openfilebttn">
+   <property name="geometry">
+    <rect>
+     <x>20</x>
+     <y>510</y>
+     <width>251</width>
+     <height>21</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>打开文件</string>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="loopbttn">
+   <property name="geometry">
+    <rect>
+     <x>20</x>
+     <y>540</y>
+     <width>251</width>
+     <height>21</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>选择模式</string>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="deletebttn">
+   <property name="geometry">
+    <rect>
+     <x>20</x>
+     <y>560</y>
+     <width>251</width>
+     <height>21</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>移除歌曲</string>
+   </property>
+  </widget>
+  <widget class="QSlider" name="progressSlider">
+   <property name="geometry">
+    <rect>
+     <x>50</x>
+     <y>470</y>
+     <width>191</width>
+     <height>21</height>
+    </rect>
+   </property>
+   <property name="orientation">
+    <enum>Qt::Horizontal</enum>
+   </property>
+  </widget>
+  <widget class="QLabel" name="coverLabel">
+   <property name="geometry">
+    <rect>
+     <x>300</x>
+     <y>30</y>
+     <width>200</width>
+     <height>200</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string/>
+   </property>
+   <property name="alignment">
+    <set>Qt::AlignCenter</set>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="mutebttn">
+   <property name="geometry">
+    <rect>
+     <x>20</x>
+     <y>590</y>
+     <width>251</width>
+     <height>16</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>静音</string>
+   </property>
   </widget>
  </widget>
  <resources/>

@@ -1,0 +1,188 @@
+====================================
+  后端函数清单（Backend Functions）
+====================================
+文件：mainWindow/mainwindow.cpp / mainwindow.h
+说明：以下函数归为“后端”职责，负责音频播放控制、播放列表管理、
+      元数据解析、封面加载、数据持久化等核心业务逻辑。
+
+
+一、播放列表管理
+----------------
+
+1. onAddFile
+   位置：mainwindow.cpp L316-L332
+   头文件声明：mainwindow.h L32
+   功能：通过文件对话框选择多个音频文件，添加到 QStringListModel 显示列表，
+        并同步添加到 QMediaPlaylist 播放队列。
+
+2. onAddFolder
+   位置：mainwindow.cpp L334-L366
+   头文件声明：mainwindow.h L33
+   功能：选择文件夹，扫描其中 mp3/wav/flac/ogg/wma/aac 等音频文件，
+        将完整路径添加到显示列表和 QMediaPlaylist。
+
+3. onRemoveSelected
+   位置：mainwindow.cpp L368-L391
+   头文件声明：mainwindow.h L34
+   功能：移除列表中选中的歌曲，支持多选；从后往前删除避免索引错乱，
+        同时同步移除 QMediaPlaylist 中的对应媒体。
+
+
+二、播放控制
+----------------
+
+4. onPlayPause
+   位置：mainwindow.cpp L406-L422
+   头文件声明：mainwindow.h L37
+   来源：移植自 MusicPlayer::on_playbttn_clicked
+   功能：播放/暂停切换。播放列表为空时提示；PlayingState 时暂停并停止定时器，
+        否则播放并启动定时器，同步按钮显示文本。
+
+5. onPrev
+   位置：mainwindow.cpp L424-L428
+   头文件声明：mainwindow.h L38
+   功能：切换到上一首。基于 QMediaPlaylist::previous() 实现。
+
+6. onNext
+   位置：mainwindow.cpp L430-L434
+   头文件声明：mainwindow.h L39
+   功能：切换到下一首。基于 QMediaPlaylist::next() 实现。
+
+7. onMuteToggle
+   位置：mainwindow.cpp L437-L446
+   头文件声明：mainwindow.h L40
+   来源：移植自 MusicPlayer::on_mutebttn_clicked，改用 isMuted/setMuted 方式
+   功能：静音状态切换，并同步静音按钮图标。
+
+8. onPlayModeToggle
+   位置：mainwindow.cpp L449-L468
+   头文件声明：mainwindow.h L41
+   来源：移植自 MusicPlayer::on_loopbttn_clicked
+   功能：播放模式切换：列表循环 -> 单曲循环 -> 随机播放 -> 列表循环。
+        通过 QMediaPlaylist::setPlaybackMode 设置对应模式。
+
+9. onVolumeChange
+   位置：mainwindow.cpp L471-L481
+   头文件声明：mainwindow.h L42
+   来源：移植自 MusicPlayer::on_horizontalSlider_valueChanged
+   功能：根据滑块值设置播放器音量，同时同步静音状态和按钮图标。
+
+10. onProgressChange
+    位置：mainwindow.cpp L484-L487
+    头文件声明：mainwindow.h L43
+    来源：移植自 MusicPlayer::on_progressSlider_sliderMoved
+    功能：进度条拖动时，直接设置播放器当前播放位置（毫秒直设）。
+
+
+三、播放器回调与状态同步
+-------------------------
+
+11. onMediaPlayerDurationChanged
+    位置：mainwindow.cpp L497-L501
+    头文件声明：mainwindow.h L47
+    来源：移植自 MusicPlayer::onDurationChanged
+    功能：总时长变化时，更新总时长标签，并将进度条最大值设为总时长（毫秒）。
+
+12. onMediaPlayerStateChanged
+    位置：mainwindow.cpp L504-L519
+    头文件声明：mainwindow.h L48
+    来源：移植自 MusicPlayer::onMediaPlayerStateChanged
+    功能：根据播放器状态（播放/暂停/停止）同步播放按钮图标、
+         启停进度定时器、停止时归零进度条和当前时间标签。
+
+13. onMediaPlayerMediaChanged（中的 m_currentPath 记录）
+    位置：mainwindow.cpp L521-L538，关键行 L524
+    头文件声明：mainwindow.h L49
+    来源：MusicPlayer::m_currentPath
+    功能：当前播放媒体变化时，记录当前文件路径 m_currentPath，
+         供后续元数据读取和文件夹封面加载使用；同时用文件名做初始显示。
+
+14. updateProgress
+    位置：mainwindow.cpp L551-L559
+    头文件声明：mainwindow.h L53
+    来源：移植自 MusicPlayer::onPositionChanged
+    功能：定时器槽函数。未拖动进度条时，读取播放器当前位置，
+         直接以毫秒更新进度条和当前时间标签。
+
+
+四、元数据与封面
+----------------
+
+15. onMetaDataAvailable
+    位置：mainwindow.cpp L564-L617
+    头文件声明：mainwindow.h L56
+    来源：移植自 MusicPlayer::onMetaDataAvailable
+    功能：元数据可用时，读取音频文件的标题、艺术家、专辑信息；
+         依次尝试 CoverArtImage / ThumbnailImage / "CoverArtImage" 获取内嵌封面；
+         若内嵌封面无效，调用 loadCoverFromFolder() 从文件夹加载。
+
+16. loadCoverFromFolder
+    位置：mainwindow.cpp L620-L643
+    头文件声明：mainwindow.h L68
+    来源：移植自 MusicPlayer::loadCoverFromFolder
+    功能：在当前音频文件所在目录中，按常见封面文件名
+         （folder.jpg / cover.jpg / front.jpg / folder.png / cover.png）
+         查找并加载封面图片。
+
+
+五、播放列表交互
+----------------
+
+17. on_listView_doubleClicked
+    位置：mainwindow.cpp L646-L654
+    头文件声明：mainwindow.h L57
+    来源：移植自 MusicPlayer::on_listView_doubleClicked
+    功能：双击列表项时，设置 QMediaPlaylist 当前索引并播放。
+
+
+六、数据持久化（记忆化播放列表）
+--------------------------------
+
+18. savePlayerList
+    位置：mainwindow.cpp L657-L669
+    头文件声明：mainwindow.h L64
+    来源：移植自 MusicPlayer::savePlayerList
+    功能：程序退出时，将当前播放列表中的所有文件路径写入 playlist.txt，
+         每行一个路径。
+
+19. loadPlayerList
+    位置：mainwindow.cpp L672-L702
+    头文件声明：mainwindow.h L65
+    来源：移植自 MusicPlayer::loadPlayerList
+    功能：程序启动时，从 playlist.txt 读取保存的路径，过滤不存在的文件，
+         恢复到 QStringListModel 显示列表，并同步到 QMediaPlaylist。
+
+20. playerListFilePath
+    位置：mainwindow.cpp L705-L708
+    头文件声明：mainwindow.h L63
+    来源：移植自 MusicPlayer::playerListFilePath
+    功能：返回播放列表保存文件路径：程序目录/playlist.txt。
+
+
+====================================
+  后端专属数据成员
+====================================
+
+m_currentPath
+  位置：mainwindow.h L103
+  来源：从 MusicPlayer 移植
+  功能：记录当前播放文件的完整路径，供元数据解析和封面加载使用。
+
+
+====================================
+  后端代码量统计
+====================================
+
+mainwindow.h  后端声明：约 15 行 + m_currentPath 1 行
+mainwindow.cpp 后端实现：约 290 行（含 include/信号连接/析构/20个函数）
+
+按职责分类：
+  - 播放列表管理：约 76 行（onAddFile / onAddFolder / onRemoveSelected）
+  - 播放控制：约 90 行（onPlayPause / onPrev / onNext / onMuteToggle /
+                        onPlayModeToggle / onVolumeChange / onProgressChange）
+  - 播放器回调与状态：约 60 行
+  - 元数据与封面：约 80 行
+  - 数据持久化：约 60 行
+  - 其他辅助（include / 信号连接 / 析构）：约 20 行
+
+====================================

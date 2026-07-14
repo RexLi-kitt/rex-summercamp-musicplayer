@@ -7,7 +7,6 @@
 #include <QDir>
 #include <QItemSelectionModel>
 #include <QFileInfo>
-// 以下为从 MusicPlayer 移植功能所需的头文件
 #include <QMediaMetaData>
 #include <QFile>
 #include <QTextStream>
@@ -16,6 +15,7 @@
 #include <QImage>
 #include <QPixmap>
 #include <QVariant>
+#include<QSet>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), m_currentTheme(Heal)
@@ -32,7 +32,7 @@ MainWindow::MainWindow(QWidget *parent)
     btnPrev = new QPushButton("⏮", this);
     btnPlay = new QPushButton("▶", this);
     btnNext = new QPushButton("⏭", this);
-    btnMute = new QPushButton("🔇", this);
+    btnMute = new QPushButton("🔊", this);
     sliderVolume = new QSlider(Qt::Horizontal, this);
     sliderVolume->setRange(0, 100);
 
@@ -173,7 +173,6 @@ MainWindow::MainWindow(QWidget *parent)
 
 MainWindow::~MainWindow()
 {
-    // （从 MusicPlayer 移植）
     savePlayerList();
 }
 
@@ -320,13 +319,29 @@ void MainWindow::onAddFile()
 
     if (files.isEmpty())
         return;
+    QStringList currentList = playlistModel->stringList();
+    QSet<QString> existingSet(currentList.begin(), currentList.end());
+    QStringList newFiles;
+    for (const QString &file : files) {
+        if (!existingSet.contains(file)) {
+            newFiles.append(file);
+            existingSet.insert(file);
+        }
+    }
 
-        QStringList currentList = playlistModel->stringList();
-    currentList.append(files);
+    int duplicateCount = files.size() - newFiles.size();
+    if (duplicateCount > 0) {
+        QMessageBox::information(this, "提示",
+            QString("已跳过 %1 首重复歌曲。").arg(duplicateCount));
+    }
+
+    if (newFiles.isEmpty())
+        return;
+
+    currentList.append(newFiles);
     playlistModel->setStringList(currentList);
 
-    // 同时添加到 QMediaPlaylist
-    for (const QString &file : files) {
+    for (const QString &file : newFiles) {
         m_playlist->addMedia(QUrl::fromLocalFile(file));
     }
 }
@@ -342,7 +357,7 @@ void MainWindow::onAddFolder()
     QDir directory(dir);
     QStringList filters;
     filters << "*.mp3" << "*.wav" << "*.flac" << "*.ogg" << "*.wma" << "*.aac";
-    QStringList files = directory.entryList(filters, QDir::Files);
+    QStringList files = directory.entryList(filters, QDir::Files);//扫描文件夹中的文件
 
     if (files.isEmpty()) {
         QMessageBox::information(this, "提示", "所选文件夹中没有找到支持的音频文件。");
@@ -354,13 +369,30 @@ void MainWindow::onAddFolder()
     for (const QString &file : files) {
         fullPaths.append(dir + "/" + file);
     }
-
-        QStringList currentList = playlistModel->stringList();
-    currentList.append(fullPaths);
-    playlistModel->setStringList(currentList);
-
-    // 同时添加到 QMediaPlaylist
+    QStringList currentList = playlistModel->stringList();
+    //set查重
+    QSet<QString> existingSet(currentList.begin(), currentList.end());
+    QStringList newPaths;
     for (const QString &path : fullPaths) {
+        if (!existingSet.contains(path)) {
+            newPaths.append(path);
+            existingSet.insert(path);
+        }
+    }
+
+
+    if (newPaths.isEmpty())
+        return;
+    int duplicate_songs = fullPaths.size() - newPaths.size();
+    if(duplicate_songs > 0){
+        QMessageBox::information(this, "提示",
+            QString("已跳过 %1 首重复歌曲。").arg(duplicate_songs));
+    }
+    currentList.append(newPaths);
+    //将路径添加到playlistModel
+    playlistModel->setStringList(currentList);
+    // 同时添加到 QMediaPlaylist
+    for (const QString &path : newPaths) {
         m_playlist->addMedia(QUrl::fromLocalFile(path));
     }
 }
@@ -400,8 +432,7 @@ static QString formatTime(qint64 ms)
 }
 
 // ========== 播放控制函数（移植自 MusicPlayer 对应槽函数）==========
-// 说明：保留 QMediaPlaylist 架构 + m_progressTimer + 空列表判断，
-//       核心逻辑从 MusicPlayer 迁移。
+// 保留 QMediaPlaylist 架构 + m_progressTimer + 空列表判断
 
 void MainWindow::onPlayPause()
 {
@@ -433,7 +464,6 @@ void MainWindow::onNext()
     m_playlist->next();
 }
 
-// 移植自 MusicPlayer::on_mutebttn_clicked，改用 isMuted/setMuted 方式
 void MainWindow::onMuteToggle()
 {
     if (m_player->isMuted()) {
@@ -444,13 +474,11 @@ void MainWindow::onMuteToggle()
         btnMute->setText("🔇");
     }
 }
-
-// 移植自 MusicPlayer::on_loopbttn_clicked，保留 QMediaPlaylist::setPlaybackMode
 void MainWindow::onPlayModeToggle()
 {
     switch (m_currentPlayMode) {
     case LoopList:
-        m_playlist->setPlaybackMode(QMediaPlaylist::Loop);
+        m_playlist->setPlaybackMode(QMediaPlaylist::CurrentItemInLoop);
         m_currentPlayMode = LoopOne;
         btnPlayMode->setText("🔂 单曲循环");
         break;
@@ -460,14 +488,14 @@ void MainWindow::onPlayModeToggle()
         btnPlayMode->setText("🔀 随机播放");
         break;
     case RandomPlay:
-        m_playlist->setPlaybackMode(QMediaPlaylist::Sequential);
+        m_playlist->setPlaybackMode(QMediaPlaylist::Loop);
         m_currentPlayMode = LoopList;
         btnPlayMode->setText("🔁 列表循环");
         break;
     }
 }
 
-// 移植自 MusicPlayer::on_horizontalSlider_valueChanged，保留静音/音量状态同步
+//保留静音/音量状态同步
 void MainWindow::onVolumeChange(int value)
 {
     m_player->setVolume(value);
@@ -480,7 +508,6 @@ void MainWindow::onVolumeChange(int value)
     }
 }
 
-// 移植自 MusicPlayer::on_progressSlider_sliderMoved，进度条已改为毫秒直设
 void MainWindow::onProgressChange(int value)
 {
     m_player->setPosition(value);
@@ -491,16 +518,16 @@ void MainWindow::onProgressChange(int value)
 void MainWindow::onMediaPlayerPositionChanged(qint64 position)
 {
     Q_UNUSED(position);
-}
+}//空函数
 
-// 移植自 MusicPlayer::onDurationChanged，新增进度条最大值为时长（毫秒）
+
 void MainWindow::onMediaPlayerDurationChanged(qint64 duration)
 {
     labelTotalTime->setText(formatTime(duration));
     sliderProgress->setMaximum(static_cast<int>(duration));
 }
 
-// 移植自 MusicPlayer::onMediaPlayerStateChanged，保留定时器管理 + 进度条归零
+
 void MainWindow::onMediaPlayerStateChanged(QMediaPlayer::State state)
 {
     if (state == QMediaPlayer::PlayingState) {
@@ -520,7 +547,7 @@ void MainWindow::onMediaPlayerStateChanged(QMediaPlayer::State state)
 
 void MainWindow::onMediaPlayerMediaChanged(const QMediaContent &media)
 {
-    QString filePath = media.canonicalUrl().toLocalFile();
+    QString filePath = media.request().url().toLocalFile();
     m_currentPath = filePath;   // 记录当前路径，供 onMetaDataAvailable/loadCoverFromFolder 使用
 
     if (filePath.isEmpty()) {

@@ -14,6 +14,8 @@
 #include <QPixmap>
 #include <QDir>
 #include <QVariant>
+#include <QMenu>
+#include <QAction>
 
 MusicPlayer::MusicPlayer(QWidget *parent)
     : QWidget(parent)
@@ -32,9 +34,12 @@ MusicPlayer::MusicPlayer(QWidget *parent)
             this, &MusicPlayer::onDurationChanged);
     connect(m_player, &QMediaPlayer::positionChanged,
             this, &MusicPlayer::onPositionChanged);
+    connect(m_player, &QMediaPlayer::stateChanged,
+            this, &MusicPlayer::onMediaPlayerStateChanged);
 
     loadPlayerList();
     m_player->setVolume(50);
+    applyTheme(Heal);
 }
 
 MusicPlayer::~MusicPlayer()
@@ -84,8 +89,10 @@ void MusicPlayer::on_playbttn_clicked()
 {
     if (m_player->state() == QMediaPlayer::PlayingState) {
         m_player->pause();
+        ui->playbttn->setText("▶");
     } else {
         m_player->play();
+        ui->playbttn->setText("■");
     }
 }
 
@@ -93,14 +100,6 @@ void MusicPlayer::on_playbttn_clicked()
 void MusicPlayer::on_listView_doubleClicked(const QModelIndex &index)
 {
     playAtIndex(index.row());
-}
-
-void MusicPlayer::on_random_play_bttn_clicked()
-{
-    int count = m_listModel->rowCount();
-    if(count == 0) return;
-    int randomIndex = QRandomGenerator::global()->bounded(count);
-    playAtIndex(randomIndex);
 }
 
 //记忆化功能
@@ -246,18 +245,18 @@ void MusicPlayer::onMediaStatusChanged(QMediaPlayer::MediaStatus status){
 
 void MusicPlayer::on_loopbttn_clicked()
 {
-    // 切换到下一种模式
+    // 切换到下一种模式（与 mainwindow 风格一致）
     if (m_playMode == ListLoop) {
         m_playMode = SingleLoop;
-        ui->loopbttn->setText("单曲循环");
+        ui->loopbttn->setText("🔂 单曲循环");
     }
     else if (m_playMode == SingleLoop) {
         m_playMode = Random;
-        ui->loopbttn->setText("随机播放");
+        ui->loopbttn->setText("🔀 随机播放");
     }
     else {
         m_playMode = ListLoop;
-        ui->loopbttn->setText("列表循环");
+        ui->loopbttn->setText("🔁 列表循环");
     }
 }
 
@@ -411,4 +410,158 @@ void MusicPlayer::on_mutebttn_clicked()
             m_player->setMuted(true);
             ui->mutebttn->setText("取消静音");
         }
+}
+
+void MusicPlayer::onMediaPlayerStateChanged(QMediaPlayer::State state)
+{
+    if (state == QMediaPlayer::PlayingState) {
+        ui->playbttn->setText("■");
+    } else if (state == QMediaPlayer::PausedState) {
+        ui->playbttn->setText("▶");
+    } else { // StoppedState
+        ui->playbttn->setText("▶");
+    }
+}
+
+// ========== 主题相关（从 mainwindow 移植）==========
+
+void MusicPlayer::on_themebttn_clicked()
+{
+    showThemeMenu();
+}
+
+void MusicPlayer::showThemeMenu()
+{
+    QMenu menu(this);
+    QAction *healAction = menu.addAction("🌿 治愈系（淡绿）");
+    QAction *darkAction = menu.addAction("🌙 暗黑系（深色）");
+
+    QAction *chosen = menu.exec(ui->themebttn->mapToGlobal(QPoint(0, ui->themebttn->height())));
+    if (chosen == healAction) {
+        applyTheme(Heal);
+    } else if (chosen == darkAction) {
+        applyTheme(Dark);
+    }
+}
+
+void MusicPlayer::applyTheme(Theme theme)
+{
+    m_currentTheme = theme;
+    setStyleSheet(themeStylesheet(theme));
+}
+
+QString MusicPlayer::themeStylesheet(Theme theme) const
+{
+    if (theme == Heal) {
+        return R"(
+            /* 主窗口背景：纯色，不突兀（QMainWindow 改为 QWidget 适配本类） */
+            QWidget {
+                background-color: #F5F5F0;
+            }
+                        /* 按钮渐变 - 强制覆盖默认蓝色，所有状态颜色统一 */
+                        QPushButton {
+                            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                stop:0 #C8E6C9, stop:1 #E8F5E9);
+                            border: 1px solid #A5D6A7;
+                            border-radius: 4px;
+                            padding: 4px 8px;
+                            color: #2e7d58;
+                        }
+                        QPushButton:hover {
+                            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                stop:0 #A5D6A7, stop:1 #C8E6C9);
+                            color: #1B5E20;
+                        }
+                        QPushButton:pressed {
+                            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                stop:0 #81C784, stop:1 #A5D6A7);
+                            color: #1B5E20;
+                        }
+                        QPushButton:focus {
+                            color: #2E7D32;
+                        }
+                        QPushButton:!focus {
+                            color: #2E7D32;
+                        }
+            /* 滑块渐变 */
+            QSlider::groove:horizontal {
+                height: 6px;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #C8E6C9, stop:1 #E8F5E9);
+                border-radius: 3px;
+            }
+            QSlider::handle:horizontal {
+                background: #66BB6A;
+                width: 14px;
+                height: 14px;
+                margin: -4px 0;
+                border-radius: 7px;
+            }
+            /* 标签 */
+            QLabel {
+                color: #1B5E20;
+            }
+            /* 列表视图 */
+            QListView {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #F1F8E9, stop:1 #E8F5E9);
+                border: 1px solid #A5D6A7;
+                border-radius: 4px;
+                color: #1B5E20;
+            }
+        )";
+    } else { // Dark
+        return R"(
+            QWidget {
+                background-color: #2D2D2D;
+            }
+                        QPushButton {
+                            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                stop:0 #424242, stop:1 #616161);
+                            border: 1px solid #757575;
+                            border-radius: 4px;
+                            padding: 4px 8px;
+                            color: #E0E0E0;
+                        }
+                        QPushButton:hover {
+                            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                stop:0 #616161, stop:1 #757575);
+                            color: #FFFFFF;
+                        }
+                        QPushButton:pressed {
+                            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                stop:0 #757575, stop:1 #9E9E9E);
+                            color: #FFFFFF;
+                        }
+                        QPushButton:focus {
+                            color: #E0E0E0;
+                        }
+                        QPushButton:!focus {
+                            color: #E0E0E0;
+                        }
+            QSlider::groove:horizontal {
+                height: 6px;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #424242, stop:1 #616161);
+                border-radius: 3px;
+            }
+            QSlider::handle:horizontal {
+                background: #BDBDBD;
+                width: 14px;
+                height: 14px;
+                margin: -4px 0;
+                border-radius: 7px;
+            }
+            QLabel {
+                color: #E0E0E0;
+            }
+            QListView {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #383838, stop:1 #424242);
+                border: 1px solid #757575;
+                border-radius: 4px;
+                color: #E0E0E0;
+            }
+        )";
+    }
 }

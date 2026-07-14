@@ -23,11 +23,13 @@ public:
         Random
     };
 
+    // 主题枚举（从 mainwindow 移植）
+    enum Theme { Heal, Dark };
+
 private slots:
     void on_opendirbttn_clicked();
     void on_playbttn_clicked();
     void on_listView_doubleClicked(const QModelIndex &index);
-    void on_random_play_bttn_clicked();
     void on_prevbttn_clicked();
 
     void on_nextbttn_clicked();
@@ -50,12 +52,16 @@ private slots:
 
     void on_progressSlider_sliderMoved(int position);
 
+    void onMediaPlayerStateChanged(QMediaPlayer::State state);
+
 
 
 
 
 
     void on_mutebttn_clicked();
+
+    void on_themebttn_clicked();   // 主题切换按钮（从 mainwindow 移植）
 
 private:
     Ui::MusicPlayer *ui;
@@ -64,7 +70,13 @@ private:
     int m_currentIndex = -1;
     QString m_currentPath;
     PlayMode m_playMode = ListLoop;
+    Theme m_currentTheme = Heal;     // 当前主题
     QString formatTime(qint64 ms) const;
+
+    // 主题相关（从 mainwindow 移植）
+    void applyTheme(Theme theme);
+    QString themeStylesheet(Theme theme) const;
+    void showThemeMenu();
 
     void loadCoverFromFolder();
 

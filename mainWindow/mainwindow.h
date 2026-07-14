@@ -11,7 +11,7 @@
 #include <QMediaPlayer>
 #include <QMediaPlaylist>
 #include <QTimer>
-#include "volumepulseoverlay.h"
+#include <QModelIndex>
 
 class MainWindow : public QMainWindow
 {
@@ -25,9 +25,6 @@ public:
 
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
-
-protected:
-    void resizeEvent(QResizeEvent *event) override;
 
 private slots:
     void showThemeMenu();          // 弹出主题选择菜单
@@ -55,8 +52,20 @@ private slots:
     // 定时器更新进度
     void updateProgress();
 
+    // 以下两个槽从 MusicPlayer 移植（保留原函数名）
+    void onMetaDataAvailable(bool available);              // 元数据可用：标题/艺术家/专辑/封面
+    void on_listView_doubleClicked(const QModelIndex &index); // 双击列表项播放
+
 private:
     QString themeStylesheet(Theme theme); // 返回对应主题的样式表
+
+    // 记忆化播放列表（从 MusicPlayer 移植，保留原函数名）
+    QString playerListFilePath() const;
+    void savePlayerList();
+    void loadPlayerList();
+
+    // 从文件夹加载封面（从 MusicPlayer 移植，保留原函数名）
+    void loadCoverFromFolder();
 
     QPushButton *btnPrev;
     QPushButton *btnPlay;
@@ -81,8 +90,6 @@ private:
     QListView *listViewPlaylist;
     QStringListModel *playlistModel;
 
-    VolumePulseOverlay *pulseOverlay;
-
     Theme m_currentTheme;          // 当前主题
 
     // 多媒体成员
@@ -91,9 +98,9 @@ private:
     QTimer *m_progressTimer;
 
     PlayMode m_currentPlayMode;    // 当前播放模式
-    bool m_isMuted;                // 静音状态
-    int m_volumeBeforeMute;        // 静音前的音量
     bool m_isSliderDragging;       // 进度条是否正在拖动
+
+    QString m_currentPath;         // 当前播放文件路径（供封面加载使用，从 MusicPlayer 移植）
 };
 
 #endif

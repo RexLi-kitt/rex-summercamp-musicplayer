@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
-set(CMAKE_CXX_COMPILER "C:/Qt/Qt5.14.2/Tools/mingw730_64/bin/g++.exe")
-set(CMAKE_PREFIX_PATH "C:/Qt/Qt5.14.2/5.14.2/mingw73_64")
+set(CMAKE_CXX_COMPILER "C:/Qt/Qt5.14.2/Tools/mingw730_32/bin/g++.exe")
+set(CMAKE_PREFIX_PATH "C:/Qt/Qt5.14.2/5.14.2/mingw73_32")
 project(mainWindow LANGUAGES CXX)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
@@ -42,8 +42,6 @@ else()
     mainwindow.cpp
     mainwindow.h
     mainwindow.ui
-    volumepulseoverlay.cpp
-    volumepulseoverlay.h
   )
 endif()
 

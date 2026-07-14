@@ -1,0 +1,269 @@
+============================================================
+   前后端代码分配与职责分工
+   (Frontend / Backend Division)
+============================================================
+项目：音乐播放器 (rex-summercamp-musicplayer)
+文件：mainWindow/mainwindow.h / mainWindow/mainwindow.cpp
+
+============================================================
+  一、分工概述
+============================================================
+
+  成员 A（前端）  |  成员 B（后端）
+─────────────────┼─────────────────
+  UI 搭建         |  播放控制
+  主题系统        |  元数据与封面
+  QSS 样式表      |  数据持久化
+  控件布局        |  播放列表管理
+  信号连接（桥接）|  播放器回调处理
+  枚举定义        |  播放列表交互
+
+  代码总量：    前后端约 764 行（去除 QSS 后约 650 行）
+  后端代码：    约 290 行（含 20 个函数 + 1 个数据成员）
+  前端代码：    约 360 行（去除 QSS 后的逻辑代码）
+
+
+============================================================
+  二、前端（成员 A）职责清单
+============================================================
+
+▸ mainwindow.h
+────────────────────────────────────────────────────────────
+
+  行号      内容                          说明
+  ─────────────────────────────────────────────────────
+  L1-L3     头文件保护宏                  共享
+  L4-L13    UI 相关头文件 include          QPushButton/QLabel/QSlider 等控件类
+  L16-L19   类声明 / Q_OBJECT             共享
+  L22       Theme 枚举 { Heal, Dark }     前端：主题系统使用
+  L30-L31   showThemeMenu / applyTheme     前端：主题弹出菜单 + 应用皮肤
+  L60       themeStylesheet(Theme)         前端：生成 QSS 样式表
+  L70-L78   9 个按钮控件成员               前端：UI 控件
+  L80-L81   2 个滑块控件成员               前端：UI 控件
+  L83-L88   6 个标签控件成员               前端：UI 控件
+  L90-L91   listView + playlistModel       前端：列表视图 + 字符串模型
+  L93       m_currentTheme                 前端：当前主题状态
+
+▸ mainwindow.cpp
+────────────────────────────────────────────────────────────
+
+  行号      内容                          说明
+  ─────────────────────────────────────────────────────
+  L1-L9     基础头文件 include             QFileDialog/QMessageBox/QMenu 等
+  L20-L100  控件创建 + 布局搭建            new 所有按钮/滑块/标签/列表, QVBoxLayout/QHBoxLayout
+  L102-L115 多媒体对象初始化               new QMediaPlayer/QMediaPlaylist/QTimer（共享资源）
+  L117-L162 信号连接                       connect 按钮/滑块/播放器信号到槽函数（桥接前后端）
+  L167-L171 applyTheme/setWindowTitle      初始主题 + 窗口标题 + resize
+  L180-L314 主题系统                       3 个函数：showThemeMenu / applyTheme / themeStylesheet
+                                           themeStylesheet 含 114 行 QSS 样式表（治愈系+暗黑系）
+  L393-L400 formatTime 工具函数            时间格式化 (ms → mm:ss)
+  L491-L494 onMediaPlayerPositionChanged   空函数，占位保留
+  L540-L546 onPlaylistCurrentIndexChanged  选中项高亮同步
+
+▸ 前端职责总结
+────────────────────────────────────────────────────────────
+  - 所有控件的创建与布局（按钮、滑块、标签、列表）
+  - 主题切换系统（治愈系 / 暗黑系）+ 114 行 QSS 样式表
+  - 信号连接（将按钮点击、滑块拖动等 UI 事件转发到槽函数）
+  - 时间格式化工具函数
+  - 列表选中高亮同步
+
+
+============================================================
+  三、后端（成员 B）职责清单
+============================================================
+
+说明：以下函数全部来自 MusicPlayer 类的移植或功能对应，
+     负责音频播放控制、元数据解析、封面加载、数据持久化
+     等核心业务逻辑。
+
+▸ mainwindow.h
+────────────────────────────────────────────────────────────
+
+  行号      内容                          说明
+  ─────────────────────────────────────────────────────
+  L14       #include <QModelIndex>        为双击槽函数提供参数类型
+  L23-L24   PlayMode 枚举                 共享：后端播放模式切换使用
+  L32       onAddFile                     后端：添加文件
+  L33       onAddFolder                   后端：添加文件夹
+  L34       onRemoveSelected              后端：移除选中
+  L37       onPlayPause                   后端：播放/暂停
+  L38       onPrev                        后端：上一首
+  L39       onNext                        后端：下一首
+  L40       onMuteToggle                  后端：静音切换
+  L41       onPlayModeToggle              后端：播放模式切换
+  L42       onVolumeChange                后端：音量变化
+  L43       onProgressChange              后端：进度跳转
+  L46       onMediaPlayerDurationChanged  后端：总时长变化
+  L47       onMediaPlayerStateChanged     后端：播放状态变化
+  L48       onMediaPlayerMediaChanged     后端：媒体切换
+  L53       updateProgress                后端：定时更新进度
+  L56       onMetaDataAvailable           后端：元数据可用
+  L57       on_listView_doubleClicked     后端：双击列表播放
+  L63       playerListFilePath            后端：列表文件路径
+  L64       savePlayerList                后端：保存播放列表
+  L65       loadPlayerList                后端：恢复播放列表
+  L68       loadCoverFromFolder           后端：文件夹封面加载
+  L100      m_currentPlayMode             共享：播放模式状态
+  L103      m_currentPath                 后端：当前文件路径
+
+▸ mainwindow.cpp  后端函数实现详情
+────────────────────────────────────────────────────────────
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ 一、播放列表管理（约 76 行）                             │
+  ├─────────────────────────────────────────────────────────┤
+  │ 1. onAddFile                     L316-L332              │
+  │    通过文件对话框选择音频文件，添加到显示列表和播放队列  │
+  │                                                         │
+  │ 2. onAddFolder                   L334-L366              │
+  │    选择文件夹，扫描 mp3/wav/flac/ogg/wma/aac 等文件     │
+  │                                                         │
+  │ 3. onRemoveSelected              L368-L391              │
+  │    支持多选删除，从后往前移除避免索引错乱                │
+  ├─────────────────────────────────────────────────────────┤
+  │ 二、播放控制（约 90 行）                                 │
+  ├─────────────────────────────────────────────────────────┤
+  │ 4. onPlayPause                   L406-L422              │
+  │    来源：MusicPlayer::on_playbttn_clicked               │
+  │    播放/暂停 + timer 管理 + 空列表提示                   │
+  │                                                         │
+  │ 5. onPrev                        L424-L428              │
+  │    QMediaPlaylist::previous() 上一首                     │
+  │                                                         │
+  │ 6. onNext                        L430-L434              │
+  │    QMediaPlaylist::next() 下一首                         │
+  │                                                         │
+  │ 7. onMuteToggle                  L437-L446              │
+  │    来源：MusicPlayer::on_mutebttn_clicked               │
+  │    改用 isMuted()/setMuted() 方式                       │
+  │                                                         │
+  │ 8. onPlayModeToggle              L449-L468              │
+  │    来源：MusicPlayer::on_loopbttn_clicked               │
+  │    列表循环 → 单曲循环 → 随机播放                        │
+  │                                                         │
+  │ 9. onVolumeChange                L471-L481              │
+  │    来源：MusicPlayer::on_horizontalSlider_valueChanged  │
+  │    设置音量 + 同步静音状态                               │
+  │                                                         │
+  │ 10. onProgressChange             L484-L487              │
+  │    来源：MusicPlayer::on_progressSlider_sliderMoved     │
+  │    毫秒直设播放位置                                      │
+  ├─────────────────────────────────────────────────────────┤
+  │ 三、播放器回调与状态同步（约 60 行）                     │
+  ├─────────────────────────────────────────────────────────┤
+  │ 11. onMediaPlayerDurationChanged L497-L501              │
+  │    来源：MusicPlayer::onDurationChanged                 │
+  │    更新总时长 + 进度条最大值 = 时长（毫秒）              │
+  │                                                         │
+  │ 12. onMediaPlayerStateChanged    L504-L519              │
+  │    来源：MusicPlayer::onMediaPlayerStateChanged         │
+  │    Playing → ■ / Paused → ▶ / Stop → 归零               │
+  │                                                         │
+  │ 13. onMediaPlayerMediaChanged    L521-L538              │
+  │    来源：MusicPlayer::m_currentPath                     │
+  │    记录 m_currentPath + 文件名初始显示                   │
+  │                                                         │
+  │ 14. updateProgress               L551-L559              │
+  │    来源：MusicPlayer::onPositionChanged                 │
+  │    毫秒直设进度 + 未拖动才更新                           │
+  ├─────────────────────────────────────────────────────────┤
+  │ 四、元数据与封面（约 80 行）                             │
+  ├─────────────────────────────────────────────────────────┤
+  │ 15. onMetaDataAvailable          L564-L617              │
+  │    来源：MusicPlayer::onMetaDataAvailable              │
+  │    读取标题/艺术家/专辑信息                              │
+  │    依次尝试 CoverArtImage / ThumbnailImage / CoverArtImage │
+  │    无内嵌封面 → 调用 loadCoverFromFolder()              │
+  │                                                         │
+  │ 16. loadCoverFromFolder          L620-L643              │
+  │    来源：MusicPlayer::loadCoverFromFolder               │
+  │    按优先级查找: folder.jpg/cover.jpg/front.jpg/        │
+  │                 folder.png/cover.png                    │
+  ├─────────────────────────────────────────────────────────┤
+  │ 五、播放列表交互（约 10 行）                             │
+  ├─────────────────────────────────────────────────────────┤
+  │ 17. on_listView_doubleClicked    L646-L654              │
+  │    来源：MusicPlayer::on_listView_doubleClicked         │
+  │    QMediaPlaylist::setCurrentIndex + play()              │
+  ├─────────────────────────────────────────────────────────┤
+  │ 六、数据持久化（约 60 行）                               │
+  ├─────────────────────────────────────────────────────────┤
+  │ 18. savePlayerList               L657-L669              │
+  │    来源：MusicPlayer::savePlayerList                    │
+  │    构造/析构时调用                                       │
+  │    QFile + QTextStream → playlist.txt                   │
+  │                                                         │
+  │ 19. loadPlayerList               L672-L702              │
+  │    来源：MusicPlayer::loadPlayerList                    │
+  │    读取 playlist.txt，过滤不存在文件，恢复列表 + 队列   │
+  │                                                         │
+  │ 20. playerListFilePath           L705-L708              │
+  │    来源：MusicPlayer::playerListFilePath               │
+  │    返回 appDir/playlist.txt                             │
+  └─────────────────────────────────────────────────────────┘
+
+▸ 后端信号连接（构造函数中，约 8 行）
+────────────────────────────────────────────────────────────
+  L10-L18    后端所需头文件 include       QMediaMetaData/QImage/QPixmap 等
+  L152-L153  metaDataAvailableChanged 连接  → onMetaDataAvailable
+  L158-L159  listView 双击信号连接         → on_listView_doubleClicked
+  L164-L165  loadPlayerList() 调用         启动时恢复播放列表
+  L174-L178  析构函数 savePlayerList()     退出时保存播放列表
+
+▸ 后端专属数据成员
+────────────────────────────────────────────────────────────
+  m_currentPath  (mainwindow.h L103)
+    记录当前播放文件的完整路径，供 onMetaDataAvailable 和
+    loadCoverFromFolder 使用。
+
+
+============================================================
+  四、代码量对比
+============================================================
+
+                    mainwindow.h    mainwindow.cpp    合计
+  ─────────────────────────────────────────────────────────
+  前端（成员 A）       90 行          400 行         490 行
+  后端（成员 B）       16 行          274 行         290 行
+  ─────────────────────────────────────────────────────────
+  总计                106 行          674 行         780 行
+
+  前端占比：62.8%
+  后端占比：37.2%
+
+  去除 QSS 样式表（114 行纯 CSS）后：
+  前端逻辑代码：376 行  |  后端逻辑代码：274 行
+  比例约 58 : 42，基本对等。
+
+
+============================================================
+  五、按功能模块的所属划分
+============================================================
+
+  模块                    | 所属    | 函数数 | 说明
+  ────────────────────────┼────────┼───────┼────────────────
+  控件创建与布局           | 前端    | 构造   | new/布局/样式
+  主题系统 (含 QSS)        | 前端    | 3      | showThemeMenu/applyTheme/themeStylesheet
+  信号连接                 | 共享    | 构造   | 桥接 UI 和逻辑
+  播放列表管理             | 后端    | 3      | onAddFile/onAddFolder/onRemoveSelected
+  播放控制                 | 后端    | 7      | onPlayPause~onProgressChange + onPrev/onNext
+  播放器回调与状态         | 后端    | 4      | duration/state/mediaChanged + updateProgress
+  元数据与封面             | 后端    | 2      | onMetaDataAvailable/loadCoverFromFolder
+  播放列表交互             | 后端    | 1      | on_listView_doubleClicked
+  数据持久化              | 后端    | 3      | savePlayerList/loadPlayerList/playerListFilePath
+  工具函数                 | 共享    | 1      | formatTime
+  列表同步                 | 前端    | 1      | onPlaylistCurrentIndexChanged
+
+
+============================================================
+  六、汇报用一句话总结
+============================================================
+
+  "前端（成员 A）负责 UI 搭建、主题系统（含 114 行 QSS）、
+   信号连接桥接；后端（成员 B）负责 20 个函数，涵盖播放列表
+   管理、播放控制、元数据解析、封面加载、数据持久化六大模块，
+   约占项目总代码量的 37%。去除纯 CSS 后，前后端逻辑代码
+   比例约为 58:42。"
+
+============================================================

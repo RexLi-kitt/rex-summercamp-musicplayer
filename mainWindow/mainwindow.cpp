@@ -2,13 +2,20 @@
 #include <QListWidget>
 #include <QFileDialog>
 #include <QMessageBox>
-#include <QResizeEvent>
 #include <QMenu>
 #include <QAction>
-#include <QColor>
 #include <QDir>
 #include <QItemSelectionModel>
 #include <QFileInfo>
+// 以下为从 MusicPlayer 移植功能所需的头文件
+#include <QMediaMetaData>
+#include <QFile>
+#include <QTextStream>
+#include <QCoreApplication>
+#include <QChar>
+#include <QImage>
+#include <QPixmap>
+#include <QVariant>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), m_currentTheme(Heal)
@@ -78,7 +85,7 @@ MainWindow::MainWindow(QWidget *parent)
     QHBoxLayout *progressLayout = new QHBoxLayout();
     labelCurrentTime = new QLabel("00:00", this);
     sliderProgress = new QSlider(Qt::Horizontal, this);
-    sliderProgress->setRange(0, 1000);
+    sliderProgress->setRange(0, 0);   // 初始为0，待加载歌曲后由 onMediaPlayerDurationChanged 更新
     labelTotalTime = new QLabel("00:00", this);
 
     progressLayout->addWidget(labelCurrentTime);
@@ -92,11 +99,6 @@ MainWindow::MainWindow(QWidget *parent)
     mainLayout->addWidget(listViewPlaylist);
     mainLayout->addLayout(progressLayout);
 
-        // 创建覆盖在进度条上的脉动层
-    pulseOverlay = new VolumePulseOverlay(sliderProgress->parentWidget());
-    pulseOverlay->setGeometry(sliderProgress->geometry());
-    pulseOverlay->raise();
-
     // ========== 多媒体初始化 ==========
     m_player = new QMediaPlayer(this);
     m_playlist = new QMediaPlaylist(this);
@@ -106,8 +108,6 @@ MainWindow::MainWindow(QWidget *parent)
     m_progressTimer->setInterval(200);
 
     m_currentPlayMode = LoopList;
-    m_isMuted = false;
-    m_volumeBeforeMute = 70;
     m_isSliderDragging = false;
 
     // 音量默认值
@@ -116,8 +116,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     // ========== 连接信号 ==========
 
-    // 音量滑块到覆盖层和播放器
-    connect(sliderVolume, &QSlider::valueChanged, pulseOverlay, &VolumePulseOverlay::setVolume);
+    // 音量滑块到播放器
     connect(sliderVolume, &QSlider::valueChanged, this, &MainWindow::onVolumeChange);
 
     // 进度条拖动
@@ -150,11 +149,20 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_player, &QMediaPlayer::stateChanged, this, &MainWindow::onMediaPlayerStateChanged);
     connect(m_player, &QMediaPlayer::mediaChanged, this, &MainWindow::onMediaPlayerMediaChanged);
 
+    // 元数据可用信号（从 MusicPlayer 移植：用于读取标题/艺术家/专辑/封面）
+    connect(m_player, &QMediaPlayer::metaDataAvailableChanged, this, &MainWindow::onMetaDataAvailable);
+
     // 播放列表信号
     connect(m_playlist, &QMediaPlaylist::currentIndexChanged, this, &MainWindow::onPlaylistCurrentIndexChanged);
 
+    // 双击列表项播放（从 MusicPlayer 移植，保留原槽函数名）
+    connect(listViewPlaylist, &QListView::doubleClicked, this, &MainWindow::on_listView_doubleClicked);
+
     // 进度更新定时器
     connect(m_progressTimer, &QTimer::timeout, this, &MainWindow::updateProgress);
+
+    // 加载上次保存的播放列表（从 MusicPlayer 移植）
+    loadPlayerList();
 
     // 应用默认主题（治愈系）
     applyTheme(Heal);
@@ -163,13 +171,10 @@ MainWindow::MainWindow(QWidget *parent)
     resize(600, 500);
 }
 
-MainWindow::~MainWindow() {}
-
-void MainWindow::resizeEvent(QResizeEvent *event)
+MainWindow::~MainWindow()
 {
-    QMainWindow::resizeEvent(event);
-    if (pulseOverlay && sliderProgress)
-        pulseOverlay->setGeometry(sliderProgress->geometry());
+    // （从 MusicPlayer 移植）
+    savePlayerList();
 }
 
 void MainWindow::showThemeMenu()
@@ -189,18 +194,7 @@ void MainWindow::showThemeMenu()
 void MainWindow::applyTheme(Theme theme)
 {
     m_currentTheme = theme;
-    QString style = themeStylesheet(theme);
-    // 对主窗口及其子控件应用样式表
-    setStyleSheet(style);
-
-    // 更新脉动覆盖层的颜色以匹配主题
-    QColor pulseColor;
-    if (theme == Heal) {
-        pulseColor = QColor(100, 200, 120);   // 淡绿色
-    } else {
-        pulseColor = QColor(200, 60, 80);     // 暗红色
-    }
-    pulseOverlay->setBaseColor(pulseColor);
+    setStyleSheet(themeStylesheet(theme));
 }
 
 QString MainWindow::themeStylesheet(Theme theme)
@@ -405,7 +399,9 @@ static QString formatTime(qint64 ms)
     return QString("%1:%2").arg(minutes, 2, 10, QChar('0')).arg(seconds, 2, 10, QChar('0'));
 }
 
-// ========== 播放控制函数 ==========
+// ========== 播放控制函数（移植自 MusicPlayer 对应槽函数）==========
+// 说明：保留 QMediaPlaylist 架构 + m_progressTimer + 空列表判断，
+//       核心逻辑从 MusicPlayer 迁移。
 
 void MainWindow::onPlayPause()
 {
@@ -437,21 +433,19 @@ void MainWindow::onNext()
     m_playlist->next();
 }
 
+// 移植自 MusicPlayer::on_mutebttn_clicked，改用 isMuted/setMuted 方式
 void MainWindow::onMuteToggle()
 {
-    m_isMuted = !m_isMuted;
-    if (m_isMuted) {
-        m_volumeBeforeMute = m_player->volume();
-        m_player->setVolume(0);
-        sliderVolume->setValue(0);
-        btnMute->setText("🔇");
-    } else {
-        m_player->setVolume(m_volumeBeforeMute);
-        sliderVolume->setValue(m_volumeBeforeMute);
+    if (m_player->isMuted()) {
+        m_player->setMuted(false);
         btnMute->setText("🔊");
+    } else {
+        m_player->setMuted(true);
+        btnMute->setText("🔇");
     }
 }
 
+// 移植自 MusicPlayer::on_loopbttn_clicked，保留 QMediaPlaylist::setPlaybackMode
 void MainWindow::onPlayModeToggle()
 {
     switch (m_currentPlayMode) {
@@ -473,25 +467,23 @@ void MainWindow::onPlayModeToggle()
     }
 }
 
+// 移植自 MusicPlayer::on_horizontalSlider_valueChanged，保留静音/音量状态同步
 void MainWindow::onVolumeChange(int value)
 {
     m_player->setVolume(value);
     if (value > 0) {
-        m_isMuted = false;
+        m_player->setMuted(false);
         btnMute->setText("🔊");
-        m_volumeBeforeMute = value;
     } else {
-        m_isMuted = true;
+        m_player->setMuted(true);
         btnMute->setText("🔇");
     }
 }
 
+// 移植自 MusicPlayer::on_progressSlider_sliderMoved，进度条已改为毫秒直设
 void MainWindow::onProgressChange(int value)
 {
-    if (m_player->duration() > 0) {
-        qint64 position = static_cast<qint64>(value) * m_player->duration() / 1000;
-        m_player->setPosition(position);
-    }
+    m_player->setPosition(value);
 }
 
 // ========== 播放器回调 ==========
@@ -501,11 +493,14 @@ void MainWindow::onMediaPlayerPositionChanged(qint64 position)
     Q_UNUSED(position);
 }
 
+// 移植自 MusicPlayer::onDurationChanged，新增进度条最大值为时长（毫秒）
 void MainWindow::onMediaPlayerDurationChanged(qint64 duration)
 {
     labelTotalTime->setText(formatTime(duration));
+    sliderProgress->setMaximum(static_cast<int>(duration));
 }
 
+// 移植自 MusicPlayer::onMediaPlayerStateChanged，保留定时器管理 + 进度条归零
 void MainWindow::onMediaPlayerStateChanged(QMediaPlayer::State state)
 {
     if (state == QMediaPlayer::PlayingState) {
@@ -526,6 +521,8 @@ void MainWindow::onMediaPlayerStateChanged(QMediaPlayer::State state)
 void MainWindow::onMediaPlayerMediaChanged(const QMediaContent &media)
 {
     QString filePath = media.canonicalUrl().toLocalFile();
+    m_currentPath = filePath;   // 记录当前路径，供 onMetaDataAvailable/loadCoverFromFolder 使用
+
     if (filePath.isEmpty()) {
         labelTitle->setText("歌名：未知");
         labelArtist->setText("歌手：未知");
@@ -533,6 +530,7 @@ void MainWindow::onMediaPlayerMediaChanged(const QMediaContent &media)
         return;
     }
 
+    // 先用文件名做初始显示，待元数据可用时由 onMetaDataAvailable 覆盖
     QFileInfo fileInfo(filePath);
     labelTitle->setText("歌名：" + fileInfo.completeBaseName());
     labelArtist->setText("歌手：未知");
@@ -549,18 +547,163 @@ void MainWindow::onPlaylistCurrentIndexChanged(int index)
 
 // ========== 定时器更新进度 ==========
 
+// 移植自 MusicPlayer::onPositionChanged，进度条改用毫秒直设（不再用 0-1000 比例）
 void MainWindow::updateProgress()
 {
     if (m_isSliderDragging)
         return;
 
-    if (m_player->duration() > 0) {
-        qint64 position = m_player->position();
-        qint64 duration = m_player->duration();
+    qint64 position = m_player->position();
+    sliderProgress->setValue(static_cast<int>(position));
+    labelCurrentTime->setText(formatTime(position));
+}
 
-        int sliderValue = static_cast<int>(position * 1000 / duration);
-        sliderProgress->setValue(sliderValue);
-        labelCurrentTime->setText(formatTime(position));
+// ========== 以下为从 MusicPlayer 移植的功能（保留原函数名）==========
+
+// 元数据可用：读取标题/艺术家/专辑/封面（从 MusicPlayer::onMetaDataAvailable 移植）
+void MainWindow::onMetaDataAvailable(bool available)
+{
+    if (!available) return;
+
+    QString title  = m_player->metaData(QMediaMetaData::Title).toString();
+    QString artist = m_player->metaData(QMediaMetaData::Author).toString();
+    QString album  = m_player->metaData(QMediaMetaData::AlbumTitle).toString();
+
+    // 如果元数据为空，用文件名/占位文本
+    if (title.isEmpty()) {
+        title = QFileInfo(m_currentPath).completeBaseName();
     }
+    if (artist.isEmpty()) {
+        artist = "未知";
+    }
+    if (album.isEmpty()) {
+        album = "未知";
+    }
+
+    labelTitle->setText("歌名：" + title);
+    labelArtist->setText("歌手：" + artist);
+    labelAlbum->setText("专辑：" + album);
+
+    // 找封面：依次尝试 CoverArtImage / ThumbnailImage / "CoverArtImage"
+    QVariant coverVariant;
+    coverVariant = m_player->metaData(QMediaMetaData::CoverArtImage);
+    if (!coverVariant.isValid()) {
+        coverVariant = m_player->metaData(QMediaMetaData::ThumbnailImage);
+    }
+    if (!coverVariant.isValid()) {
+        coverVariant = m_player->metaData("CoverArtImage");
+    }
+
+    if (coverVariant.isValid()) {
+        // QVariant 可能是 QImage，也可能是 QByteArray
+        QImage coverImage;
+        if (coverVariant.canConvert<QImage>()) {
+            coverImage = coverVariant.value<QImage>();
+        } else if (coverVariant.canConvert<QByteArray>()) {
+            coverImage.loadFromData(coverVariant.value<QByteArray>());
+        }
+
+        if (!coverImage.isNull()) {
+            QPixmap pixmap = QPixmap::fromImage(coverImage);
+            labelCover->setPixmap(pixmap.scaled(
+                labelCover->size(),
+                Qt::KeepAspectRatio,
+                Qt::SmoothTransformation));
+            return;
+        }
+    }
+    // 没找到内嵌封面，去文件夹找
+    loadCoverFromFolder();
+}
+
+// 从文件夹加载封面（从 MusicPlayer::loadCoverFromFolder 原样移植，coverLabel→labelCover）
+void MainWindow::loadCoverFromFolder()
+{
+    if (m_currentPath.isEmpty()) return;
+
+    QFileInfo fileInfo(m_currentPath);
+    QDir dir = fileInfo.absoluteDir();
+
+    // 常见的封面文件名
+    QStringList names = {"folder.jpg", "cover.jpg", "front.jpg", "folder.png", "cover.png"};
+
+    for (const QString &name : names) {
+        QString coverPath = dir.absoluteFilePath(name);
+        if (QFile::exists(coverPath)) {
+            QPixmap pixmap(coverPath);
+            if (!pixmap.isNull()) {
+                labelCover->setPixmap(pixmap.scaled(
+                    labelCover->size(),
+                    Qt::KeepAspectRatio,
+                    Qt::SmoothTransformation));
+                return;
+            }
+        }
+    }
+}
+
+// 双击列表项播放（从 MusicPlayer::on_listView_doubleClicked 移植，适配 QMediaPlaylist）
+void MainWindow::on_listView_doubleClicked(const QModelIndex &index)
+{
+    if (!index.isValid()) return;
+    int row = index.row();
+    if (row < 0 || row >= m_playlist->mediaCount()) return;
+
+    m_playlist->setCurrentIndex(row);
+    m_player->play();
+}
+
+// 记忆化播放列表：保存（适配 QStringListModel，原实现用 QStandardItemModel）
+void MainWindow::savePlayerList()
+{
+    QFile file(playerListFilePath());
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        return;   // 无效文件
+    }
+    QTextStream out(&file);
+    QStringList list = playlistModel->stringList();
+    for (const QString &path : list) {
+        out << path << "\n";   // 每行一个文件路径
+    }
+    file.close();
+}
+
+// 记忆化播放列表：加载（适配 QStringListModel，并同步到 QMediaPlaylist）
+void MainWindow::loadPlayerList()
+{
+    QFile file(playerListFilePath());
+    if (!file.exists() || !file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return;   // 第一次运行，没有保存文件，直接返回
+    }
+    QTextStream in(&file);
+    QStringList list;
+    while (!in.atEnd()) {
+        QString path = in.readLine().trimmed();
+        if (path.isEmpty()) {
+            continue;
+        }
+        QFileInfo info(path);
+        if (!info.exists()) {
+            continue;
+        }
+        list.append(path);
+    }
+    file.close();
+
+    if (list.isEmpty()) {
+        return;
+    }
+
+    playlistModel->setStringList(list);
+    // 同步到 QMediaPlaylist
+    for (const QString &path : list) {
+        m_playlist->addMedia(QUrl::fromLocalFile(path));
+    }
+}
+
+// 记忆化播放列表：保存路径（从 MusicPlayer 原样移植）
+QString MainWindow::playerListFilePath() const
+{
+    return QCoreApplication::applicationDirPath() + "/playlist.txt";
 }
 

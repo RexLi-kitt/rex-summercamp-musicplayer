@@ -12,6 +12,8 @@
 #include <QMediaPlaylist>
 #include <QTimer>
 #include <QModelIndex>
+#include <QScrollArea>
+#include <QMap>
 
 class MainWindow : public QMainWindow
 {
@@ -56,6 +58,14 @@ private slots:
     void onMetaDataAvailable(bool available);              // 元数据可用：标题/艺术家/专辑/封面
     void on_listView_doubleClicked(const QModelIndex &index); // 双击列表项播放
 
+    // ---------- 歌词功能（前后端）----------
+    // 【后端】解析歌词文件（.lrc），存储到 m_lyricLines
+    void loadLyricFile(const QString &audioFilePath);
+    // 【后端】根据当前播放位置查找应高亮的歌词行索引
+    int  findCurrentLyricIndex(qint64 position);
+    // 【前端】刷新歌词显示，高亮当前行
+    void updateLyricDisplay();
+
 private:
     QString themeStylesheet(Theme theme); // 返回对应主题的样式表
 
@@ -66,6 +76,13 @@ private:
 
     // 从文件夹加载封面（从 MusicPlayer 移植，保留原函数名）
     void loadCoverFromFolder();
+
+    // ---------- 歌词相关成员 ----------
+    QScrollArea *lyricScrollArea;         // 滚动区域，包裹歌词标签
+    QLabel      *lyricLabel;             // 显示歌词文本（支持HTML高亮）
+    QMap<qint64, QString> m_lyricLines;  // 时间(ms) → 歌词文本
+    QList<qint64> m_lyricTimeStamps;     // 排序后的时间戳列表（用于快速查找）
+    int m_currentLyricIndex;             // 当前高亮歌词行索引
 
     QPushButton *btnPrev;
     QPushButton *btnPlay;

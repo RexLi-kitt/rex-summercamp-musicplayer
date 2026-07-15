@@ -78,11 +78,17 @@ private:
     void loadCoverFromFolder();
 
     // ---------- 歌词相关成员 ----------
-    QScrollArea *lyricScrollArea;         // 滚动区域，包裹歌词标签
-    QLabel      *lyricLabel;             // 显示歌词文本（支持HTML高亮）
+    QScrollArea *lyricScrollArea;         // 滚动区域，包裹歌词容器
+    QWidget     *lyricContainer;          // 歌词容器，内含逐行 QLabel
+    QVBoxLayout *lyricLayout;            // 歌词容器的垂直布局
+    QList<QLabel*> m_lyricLineLabels;    // 逐行歌词标签（与 m_lyricTimeStamps 一一对应）
     QMap<qint64, QString> m_lyricLines;  // 时间(ms) → 歌词文本
     QList<qint64> m_lyricTimeStamps;     // 排序后的时间戳列表（用于快速查找）
     int m_currentLyricIndex;             // 当前高亮歌词行索引
+
+    // ---------- 歌词辅助 ----------
+    void clearLyricLines();              // 清空所有歌词行标签
+    void showLyricMessage(const QString &msg); // 显示单条状态信息（如"无歌词文件"）
 
     QPushButton *btnPrev;
     QPushButton *btnPlay;

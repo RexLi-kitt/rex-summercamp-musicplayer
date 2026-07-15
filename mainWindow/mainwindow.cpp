@@ -108,15 +108,12 @@ MainWindow::MainWindow(QWidget *parent)
     lyricScrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     lyricScrollArea->setMaximumHeight(150); // 显示约5-6行歌词
 
-    lyricLabel = new QLabel("歌词加载中...", this);
-    lyricLabel->setObjectName("lyricLabel");   // 用于 QSS 排除，保证富文本颜色正常
-    lyricLabel->setAlignment(Qt::AlignCenter);
-    lyricLabel->setWordWrap(true);
-    lyricLabel->setMinimumHeight(100);
-    QFont lyricFont = lyricLabel->font();
-    lyricFont.setPointSize(11);
-    lyricLabel->setFont(lyricFont);
-    lyricScrollArea->setWidget(lyricLabel);
+    lyricContainer = new QWidget(this);
+    lyricLayout = new QVBoxLayout(lyricContainer);
+    lyricLayout->setSpacing(2);
+    lyricLayout->setContentsMargins(8, 8, 8, 8);
+    lyricScrollArea->setWidget(lyricContainer);
+    showLyricMessage("歌词加载中...");
 
     mainLayout->addWidget(lyricScrollArea);
 
@@ -450,7 +447,7 @@ void MainWindow::onRemoveSelected()
         labelTitle->setText("歌名：未知");
         labelArtist->setText("歌手：未知");
         labelAlbum->setText("专辑：未知");
-        lyricLabel->setText("歌词加载中...");
+        showLyricMessage("歌词加载中...");
         m_currentPath.clear();
         m_lyricLines.clear();
         m_lyricTimeStamps.clear();
@@ -597,7 +594,7 @@ void MainWindow::onMediaPlayerMediaChanged(const QMediaContent &media)
     labelAlbum->setText("专辑：未知");
 
     // 加载对应的歌词文件
-    lyricLabel->setText("歌词加载中...");
+    showLyricMessage("歌词加载中...");
     m_lyricLines.clear();
     m_lyricTimeStamps.clear();
     m_currentLyricIndex = -1;
@@ -617,7 +614,7 @@ void MainWindow::onPlaylistCurrentIndexChanged(int index)
             m_lyricLines.clear();
             m_lyricTimeStamps.clear();
             m_currentLyricIndex = -1;
-            lyricLabel->setText("歌词加载中...");
+            showLyricMessage("歌词加载中...");
             loadLyricFile(filePath);
         }
     }
@@ -651,11 +648,11 @@ void MainWindow::loadLyricFile(const QString &audioFilePath)
     QString lrcPath = audioInfo.absoluteDir().filePath(audioInfo.completeBaseName() + ".lrc");
     QFile lrcFile(lrcPath);
     if (!lrcFile.exists()) {
-        lyricLabel->setText("无歌词文件");
+        showLyricMessage("无歌词文件");
         return;
     }
     if (!lrcFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        lyricLabel->setText("歌词读取失败");
+        showLyricMessage("歌词读取失败");
         return;
     }
 
@@ -710,9 +707,18 @@ void MainWindow::loadLyricFile(const QString &audioFilePath)
     std::sort(m_lyricTimeStamps.begin(), m_lyricTimeStamps.end());
 
     if (m_lyricTimeStamps.isEmpty()) {
-        lyricLabel->setText("歌词为空");
+        showLyricMessage("歌词为空");
     } else {
-        lyricLabel->setText("歌词就绪，播放后显示");
+        // 为每行歌词创建独立的 QLabel
+        clearLyricLines();
+        for (int i = 0; i < m_lyricTimeStamps.size(); ++i) {
+            QLabel *lineLabel = new QLabel(m_lyricLines[m_lyricTimeStamps[i]]);
+            lineLabel->setAlignment(Qt::AlignCenter);
+            lineLabel->setWordWrap(true);
+            lineLabel->setStyleSheet("font-size:7pt; margin:1px;");
+            lyricLayout->addWidget(lineLabel);
+            m_lyricLineLabels.append(lineLabel);
+        }
     }
 }
 
@@ -733,10 +739,33 @@ int MainWindow::findCurrentLyricIndex(qint64 position)
     return index;
 }
 
-// 【前端】刷新歌词显示，高亮当前行，自动滚动
+// 清空所有歌词行标签
+void MainWindow::clearLyricLines()
+{
+    QLayoutItem *item;
+    while ((item = lyricLayout->takeAt(0)) != nullptr) {
+        delete item->widget();
+        delete item;
+    }
+    m_lyricLineLabels.clear();
+}
+
+// 显示单条状态信息（如"无歌词文件"）
+void MainWindow::showLyricMessage(const QString &msg)
+{
+    clearLyricLines();
+    QLabel *msgLabel = new QLabel(msg);
+    msgLabel->setAlignment(Qt::AlignCenter);
+    QFont f = msgLabel->font();
+    f.setPointSize(10);
+    msgLabel->setFont(f);
+    lyricLayout->addWidget(msgLabel);
+}
+
+// 【前端】刷新歌词显示，高亮当前行，自动滚动居中
 void MainWindow::updateLyricDisplay()
 {
-    if (m_lyricTimeStamps.isEmpty()) return;
+    if (m_lyricTimeStamps.isEmpty() || m_lyricLineLabels.isEmpty()) return;
 
     qint64 position = m_player->position();
     int newIndex = findCurrentLyricIndex(position);
@@ -744,28 +773,27 @@ void MainWindow::updateLyricDisplay()
 
     m_currentLyricIndex = newIndex;
 
-    // 构建 HTML 格式歌词，高亮当前行
-    QString html = "<div style='text-align:center;'>";
-    for (int i = 0; i < m_lyricTimeStamps.size(); ++i) {
-        qint64 ts = m_lyricTimeStamps[i];
-        QString text = m_lyricLines[ts];
+    // 更新每行 QLabel 的样式：高亮当前行，次行为下一行，其余为普通行
+    for (int i = 0; i < m_lyricLineLabels.size(); ++i) {
+        QLabel *label = m_lyricLineLabels[i];
         if (i == m_currentLyricIndex) {
             // 当前行：加粗高亮
-            html += QString("<p style='font-size:12pt; font-weight:bold; margin:4px;'>"
-                           "%1</p>").arg(text);
+            label->setStyleSheet("font-size:12pt; font-weight:bold; color:#1976D2; margin:4px;");
         } else if (i == m_currentLyricIndex + 1) {
             // 下一行：中等字体
-            html += QString("<p style='font-size:9pt; margin:3px;'>"
-                           "%1</p>").arg(text);
+            label->setStyleSheet("font-size:9pt; margin:3px;");
         } else {
             // 其他行：小字体
-            html += QString("<p style='font-size:7pt; margin:1px;'>"
-                           "%1</p>").arg(text);
+            label->setStyleSheet("font-size:7pt; margin:1px;");
         }
     }
-    html += "</div>";
 
-    lyricLabel->setText(html);
+    // 将高亮行滚动到歌词窗口中央
+    if (m_currentLyricIndex >= 0 && m_currentLyricIndex < m_lyricLineLabels.size()) {
+        QLabel *target = m_lyricLineLabels[m_currentLyricIndex];
+        int viewportHeight = lyricScrollArea->viewport()->height();
+        lyricScrollArea->ensureWidgetVisible(target, 0, viewportHeight / 2);
+    }
 }
 
 // ========== 以下为从 MusicPlayer 移植的功能（保留原函数名）==========
